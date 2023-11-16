@@ -187,7 +187,7 @@ struct StepCollector {
 BOOST_AUTO_TEST_CASE(eigen_stepper_state_test) {
   // Set up some variables
   double stepSize = 123.;
-  auto bField = std::make_shared<ConstantBField>(Vector3(1., 2.5, 33.33));
+  auto bField = std::make_shared<ConstantBField>(Vector3(0., 0., 0.));
 
   Vector3 pos(1., 2., 3.);
   Vector3 dir(4., 5., 6.);
