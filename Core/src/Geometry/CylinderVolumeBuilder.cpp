@@ -13,6 +13,7 @@
 #include "Acts/Geometry/BoundarySurfaceFace.hpp"
 #include "Acts/Geometry/CylinderLayer.hpp"
 #include "Acts/Geometry/CylinderVolumeBounds.hpp"
+#include "Acts/Geometry/DiscLayer.hpp"
 #include "Acts/Geometry/IConfinedTrackingVolumeBuilder.hpp"
 #include "Acts/Geometry/ILayerBuilder.hpp"
 #include "Acts/Geometry/ITrackingVolumeHelper.hpp"
@@ -21,8 +22,10 @@
 #include "Acts/Geometry/VolumeBounds.hpp"
 #include "Acts/Surfaces/CylinderBounds.hpp"
 #include "Acts/Surfaces/CylinderSurface.hpp"
+#include "Acts/Surfaces/DiscSurface.hpp"
 #include "Acts/Surfaces/RadialBounds.hpp"
 #include "Acts/Surfaces/Surface.hpp"
+#include "Acts/Surfaces/SurfaceArray.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -85,6 +88,10 @@ std::shared_ptr<TrackingVolume> CylinderVolumeBuilder::trackingVolume(
     positiveLayers = m_cfg.layerBuilder->positiveLayers(gctx);
   }
   ACTS_DEBUG("-> Building layers complete");
+
+  // Add beampipe endcap discs if configured
+  // These need to be added AFTER we know the z extent, so we do it later
+  // after volume configuration is determined
 
   // Build the confined volumes
   MutableTrackingVolumeVector centralVolumes;
@@ -157,6 +164,68 @@ std::shared_ptr<TrackingVolume> CylinderVolumeBuilder::trackingVolume(
   wConfig.nVolumeConfig = analyzeContent(gctx, negativeLayers, {});  // TODO
   wConfig.cVolumeConfig = analyzeContent(gctx, centralLayers, centralVolumes);
   wConfig.pVolumeConfig = analyzeContent(gctx, positiveLayers, {});  // TODO
+
+  // Add beampipe endcap discs if configured
+  if (m_cfg.buildToRadiusZero && m_cfg.beampipeEndcaps) {
+    ACTS_DEBUG("-> Creating beampipe endcap disc layers");
+    
+    // Determine the z positions for endcaps based on central volume
+    double zNegative = wConfig.cVolumeConfig.zMin;
+    double zPositive = wConfig.cVolumeConfig.zMax;
+    double rMax = wConfig.cVolumeConfig.rMax;
+    
+    // If external bounds are provided, use those instead
+    if (externalBounds) {
+      const CylinderVolumeBounds* ocvBounds =
+          dynamic_cast<const CylinderVolumeBounds*>(externalBounds.get());
+      if (ocvBounds != nullptr) {
+        zNegative = -ocvBounds->get(CylinderVolumeBounds::eHalfLengthZ);
+        zPositive = ocvBounds->get(CylinderVolumeBounds::eHalfLengthZ);
+        rMax = ocvBounds->get(CylinderVolumeBounds::eMaxR);
+      }
+    }
+    
+    // Thickness of the endcap disc (thin disc)
+    double endcapThickness = 1.0 * UnitConstants::mm;
+    
+    // Create negative endcap disc if material is provided
+    if (m_cfg.beampipeEndcapMaterialNegative) {
+      ACTS_VERBOSE("Creating negative beampipe endcap at z = " << zNegative);
+      auto discBounds = std::make_shared<RadialBounds>(0., rMax);
+      auto transform = Transform3(Translation3(0., 0., zNegative));
+      auto discSurface = Surface::makeShared<DiscSurface>(transform, discBounds);
+      discSurface->assignSurfaceMaterial(m_cfg.beampipeEndcapMaterialNegative);
+      
+      auto discLayer = DiscLayer::create(
+          transform, discBounds, std::unique_ptr<SurfaceArray>(), endcapThickness);
+      discLayer->surfaceRepresentation().assignSurfaceMaterial(
+          m_cfg.beampipeEndcapMaterialNegative);
+      
+      negativeLayers.push_back(discLayer);
+      ACTS_VERBOSE("Added negative beampipe endcap disc layer");
+    }
+    
+    // Create positive endcap disc if material is provided
+    if (m_cfg.beampipeEndcapMaterialPositive) {
+      ACTS_VERBOSE("Creating positive beampipe endcap at z = " << zPositive);
+      auto discBounds = std::make_shared<RadialBounds>(0., rMax);
+      auto transform = Transform3(Translation3(0., 0., zPositive));
+      auto discSurface = Surface::makeShared<DiscSurface>(transform, discBounds);
+      discSurface->assignSurfaceMaterial(m_cfg.beampipeEndcapMaterialPositive);
+      
+      auto discLayer = DiscLayer::create(
+          transform, discBounds, std::unique_ptr<SurfaceArray>(), endcapThickness);
+      discLayer->surfaceRepresentation().assignSurfaceMaterial(
+          m_cfg.beampipeEndcapMaterialPositive);
+      
+      positiveLayers.push_back(discLayer);
+      ACTS_VERBOSE("Added positive beampipe endcap disc layer");
+    }
+    
+    // Re-analyze the content now that we've added the endcap layers
+    wConfig.nVolumeConfig = analyzeContent(gctx, negativeLayers, {});
+    wConfig.pVolumeConfig = analyzeContent(gctx, positiveLayers, {});
+  }
 
   bool hasLayers = wConfig.nVolumeConfig.present ||
                    wConfig.cVolumeConfig.present ||

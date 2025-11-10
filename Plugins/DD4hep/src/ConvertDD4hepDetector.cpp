@@ -443,6 +443,32 @@ std::shared_ptr<const CylinderVolumeBuilder> ActsPlugins::volumeBuilder_dd4hep(
     cvbConfig.layerEnvelopeZ = layerEnvelopeZ;
     cvbConfig.buildToRadiusZero = subDetType.is(dd4hep::DetType::BEAMPIPE);
 
+    // Check for beampipe endcaps configuration
+    if (cvbConfig.buildToRadiusZero) {
+      cvbConfig.beampipeEndcaps = getParamOr<bool>("beampipe_endcaps", subDetector, false);
+      
+      if (cvbConfig.beampipeEndcaps) {
+        ACTS_VERBOSE("-> beampipe_endcaps flag detected, creating endcap discs");
+        auto& params = getParams(subDetector);
+        
+        // Check for negative endcap material
+        if (hasParam("beampipe_endcap_material_negative", subDetector)) {
+          ACTS_VERBOSE("--> negative endcap");
+          cvbConfig.beampipeEndcapMaterialNegative =
+              createProtoMaterial(params, "beampipe_endcap_material_negative",
+                                  {{"binR", open}, {"binPhi", closed}}, logger);
+        }
+        
+        // Check for positive endcap material
+        if (hasParam("beampipe_endcap_material_positive", subDetector)) {
+          ACTS_VERBOSE("--> positive endcap");
+          cvbConfig.beampipeEndcapMaterialPositive =
+              createProtoMaterial(params, "beampipe_endcap_material_positive",
+                                  {{"binR", open}, {"binPhi", closed}}, logger);
+        }
+      }
+    }
+
     // Fill the volume material for the inner / outer cover
     if (getParamOr<bool>("boundary_material", subDetector, false)) {
       ACTS_VERBOSE(

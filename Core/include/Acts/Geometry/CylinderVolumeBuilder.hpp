@@ -491,6 +491,13 @@ class CylinderVolumeBuilder : public ITrackingVolumeBuilder {
     std::shared_ptr<const IVolumeMaterial> volumeMaterial = nullptr;
     /// Build the volume to the beam line
     bool buildToRadiusZero = false;
+    /// Add end caps to beampipe (only valid when buildToRadiusZero = true)
+    /// If true, disc surfaces are added at ±z_max of the beampipe volume
+    bool beampipeEndcaps = false;
+    /// Material for the negative z end cap (if beampipeEndcaps = true)
+    std::shared_ptr<const ISurfaceMaterial> beampipeEndcapMaterialNegative = nullptr;
+    /// Material for the positive z end cap (if beampipeEndcaps = true)
+    std::shared_ptr<const ISurfaceMaterial> beampipeEndcapMaterialPositive = nullptr;
     /// Check for endcap ring layout
     bool checkRingLayout = false;
     /// Tolerance for endcap ring association

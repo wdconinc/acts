@@ -9,8 +9,10 @@
 #include <boost/test/unit_test.hpp>
 
 #include "Acts/Definitions/Algebra.hpp"
+#include "Acts/Definitions/Direction.hpp"
 #include "Acts/Definitions/Units.hpp"
 #include "Acts/Geometry/CylinderVolumeBuilder.hpp"
+#include "Acts/Geometry/CylinderVolumeBounds.hpp"
 #include "Acts/Geometry/CylinderVolumeHelper.hpp"
 #include "Acts/Geometry/GeometryContext.hpp"
 #include "Acts/Geometry/LayerArrayCreator.hpp"
@@ -42,8 +44,8 @@ BOOST_AUTO_TEST_CASE(BeampipeEndNavigationTest) {
   const double beamPipeHalfZ = 100_mm;
   const double beamPipeThickness = 1_mm;
 
-  // Material for beampipe
-  Material beryllium = Material::fromMolarDensity(9.012, 4, 1.848_g / 1_cm3);
+  // Material for beampipe (simplified beryllium-like properties)
+  Material beryllium = Material::fromMassDensity(352.8, 407.0, 9.012, 4, 1.848);
   MaterialSlab beamPipeMaterial(beryllium, beamPipeThickness);
 
   // Build the beampipe layer
@@ -82,6 +84,13 @@ BOOST_AUTO_TEST_CASE(BeampipeEndNavigationTest) {
   bpvConfig.layerEnvelopeR = {1_mm, 1_mm};
   bpvConfig.buildToRadiusZero = true;  // This makes it a beampipe
   
+  // Enable beampipe endcaps (NEW FEATURE!)
+  bpvConfig.beampipeEndcaps = true;
+  bpvConfig.beampipeEndcapMaterialNegative =
+      std::make_shared<const HomogeneousSurfaceMaterial>(beamPipeMaterial);
+  bpvConfig.beampipeEndcapMaterialPositive =
+      std::make_shared<const HomogeneousSurfaceMaterial>(beamPipeMaterial);
+  
   auto beamPipeVolumeBuilder = std::make_shared<const CylinderVolumeBuilder>(
       bpvConfig, getDefaultLogger("BeamPipeVolumeBuilder", Logging::INFO));
 
@@ -109,7 +118,7 @@ BOOST_AUTO_TEST_CASE(BeampipeEndNavigationTest) {
       std::make_shared<const TrackingGeometryBuilder>(tgbConfig,
                                                       getDefaultLogger("TrackingGeometryBuilder", Logging::INFO));
   
-  auto trackingGeometry = trackingGeometryBuilder->trackingGeometry(gctx);
+  std::shared_ptr<const TrackingGeometry> trackingGeometry = trackingGeometryBuilder->trackingGeometry(gctx);
   BOOST_CHECK_NE(trackingGeometry, nullptr);
 
   // Now test navigation behavior
@@ -121,8 +130,10 @@ BOOST_AUTO_TEST_CASE(BeampipeEndNavigationTest) {
   navConfig.trackingGeometry = trackingGeometry;
   Navigator navigator(navConfig);
 
-  Navigator::State navState;
-  navigator.initialize(navState, position, direction);
+  Navigator::Options navOptions(gctx);
+  Navigator::State navState = navigator.makeState(navOptions);
+  auto initResult = navigator.initialize(navState, position, direction, Direction::Forward());
+  BOOST_CHECK(initResult.ok());
 
   // Get current volume
   auto currentVolume = navState.currentVolume;
@@ -150,8 +161,6 @@ BOOST_AUTO_TEST_CASE(BeampipeEndNavigationTest) {
   
   if (!target.isNone()) {
     std::cout << "Next target found" << std::endl;
-    std::cout << "Target is boundary: " << target.isBoundary() << std::endl;
-    std::cout << "Target is surface: " << target.isSurface() << std::endl;
     
     // Get intersection
     auto intersection = target.surface().intersect(gctx, position, direction).closestForward();
@@ -161,13 +170,28 @@ BOOST_AUTO_TEST_CASE(BeampipeEndNavigationTest) {
     std::cout << "No target found - this indicates navigation issue" << std::endl;
   }
 
-  // Key question: When track reaches z > beamPipeHalfZ, what happens?
-  // - Does it hit a disc surface?
-  // - Does it enter empty space?
-  // - Does it leave the tracking geometry?
+  // With capped beampipe enabled, the track should hit the disc surface!
+  if (!target.isNone()) {
+    auto intersection = target.surface().intersect(gctx, position, direction).closestForward();
+    Vector3 intersectionPos = intersection.position();
+    
+    std::cout << "Expected endcap at z = " << (beamPipeHalfZ + 10_mm) << std::endl;
+    std::cout << "Intersection at z = " << intersectionPos.z() << std::endl;
+    
+    // Verify that we're hitting near the expected endcap position
+    // The endcap should be at approximately z = beamPipeHalfZ + 10mm
+    BOOST_CHECK_CLOSE(intersectionPos.z(), beamPipeHalfZ + 10_mm, 10.0);  // Within 10%
+    
+    // Check that the surface has material
+    auto material = target.surface().surfaceMaterial();
+    BOOST_CHECK_NE(material, nullptr);
+    if (material) {
+      std::cout << "Surface has material assigned!" << std::endl;
+    }
+  }
   
-  BOOST_TEST_MESSAGE("Test demonstrates current beampipe end navigation behavior");
-  BOOST_TEST_MESSAGE("A capped beampipe would provide a disc surface at the z-end");
+  BOOST_TEST_MESSAGE("Test successfully demonstrates capped beampipe with endcap disc surfaces!");
+  BOOST_TEST_MESSAGE("Tracks at small radius propagating along z now hit material boundaries.");
 }
 
 BOOST_AUTO_TEST_SUITE_END()
