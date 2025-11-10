@@ -1,4 +1,5 @@
 add_unittest(AlignmentContext AlignmentContextTests.cpp)
+add_unittest(BeampipeNavigation BeampipeNavigationTests.cpp)
 add_unittest(Blueprint BlueprintTests.cpp)
 add_unittest(BlueprintApi BlueprintApiTests.cpp)
 add_unittest(ConeVolumeBounds ConeVolumeBoundsTests.cpp)
